@@ -14,6 +14,17 @@ python main.py
 ```
 This automatically boots the FastAPI daemon on `127.0.0.1:8765` and opens your browser directly to the dashboard.
 
+### Windows Desktop Window
+
+To open JARVIS in a lightweight desktop window instead of a browser:
+
+1. Install the project dependencies with `python -m pip install -r requirements.txt`.
+2. Make sure the Microsoft Edge WebView2 Runtime is installed. It is included with most current Windows installations.
+3. Start Ollama if you want local model chat.
+4. Double-click `start_jarvis_desktop.bat`.
+
+The desktop launcher starts the local FastAPI server when needed and displays the same UI in a native window using pywebview. If a JARVIS server is already running on the configured localhost port, it reuses it and does not stop that existing server when the window closes. This launcher requires Python and does not bundle Ollama or model files.
+
 ---
 
 ## Key Features

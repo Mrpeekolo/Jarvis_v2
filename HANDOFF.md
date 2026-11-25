@@ -48,17 +48,17 @@ Then open `http://127.0.0.1:8765` in any browser.
 
 `start_jarvis.bat` changes to the directory containing the batch file, so it works regardless of the caller's current directory.
 
+To launch the dashboard in a native desktop window, install `requirements.txt` and run `start_jarvis_desktop.bat`. This uses pywebview and requires the Microsoft Edge WebView2 Runtime. It reuses an existing JARVIS server on the configured localhost port or starts and stops its own server with the window. Python and Ollama remain separate prerequisites.
+
 ### Prerequisites
 1. **Python 3.13+** with pip
 2. **Ollama** running on `http://127.0.0.1:11434` with at least one model pulled
-3. Python packages:
+3. Python packages from the repository manifest:
    ```
-   pip install fastapi uvicorn httpx pydantic mss Pillow pywin32
+   python -m pip install -r requirements.txt
    ```
-
-4. Optional web search requires a Brave Search API key in `BRAVE_SEARCH_API_KEY`. Set it in the environment before launching JARVIS; the key is never stored in the repository.
-
-There is currently no `requirements.txt`, `pyproject.toml`, or virtual-environment setup script. Install dependencies explicitly or add a manifest before making a reproducible environment setup.
+4. For the desktop window, install the Microsoft Edge WebView2 Runtime.
+5. Optional web search requires a Brave Search API key in `BRAVE_SEARCH_API_KEY`. Set it in the environment before launching JARVIS; the key is never stored in the repository.
 
 ### Installed Ollama Models
 - `qwen2.5-coder:1.5b` (986 MB) — primary default, best speed/quality ratio
@@ -75,6 +75,9 @@ Model availability is machine-specific. The server queries Ollama through `GET /
 jarvis/
 ├── main.py                  # FastAPI server — all API routes, SSE chat streaming
 ├── start_jarvis.bat         # One-click Windows launcher
+├── desktop.py               # pywebview desktop-window entry point
+├── start_jarvis_desktop.bat # Windows launcher for the native desktop window
+├── requirements.txt         # Python runtime dependencies
 ├── HANDOFF.md               # This file
 ├── README.md                # Brief project readme
 ├── test_core.py             # Unit tests: AST sandbox, plugin discovery
@@ -307,6 +310,9 @@ Pillow
 
 # Windows OS Tools
 pywin32
+
+# Desktop Window
+pywebview
 
 # Already installed for future phases
 vosk
