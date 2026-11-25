@@ -10,19 +10,25 @@ class OllamaEngine:
     def __init__(self, base_url: str = cfg.OLLAMA_URL):
         self.base_url = base_url.rstrip("/")
 
-    async def get_available_models(self) -> List[str]:
+    async def get_model_status(self) -> tuple[List[str], bool]:
         try:
-            async with httpx.AsyncClient(timeout=5.0) as client:
+            async with httpx.AsyncClient(timeout=3.0) as client:
                 res = await client.get(f"{self.base_url}/api/tags")
                 if res.status_code == 200:
                     data = res.json()
-                    return [m["name"] for m in data.get("models", [])]
+                    return [m["name"] for m in data.get("models", [])], True
+                logger.warning("Ollama tags request returned HTTP %s", res.status_code)
         except Exception as e:
             logger.warning(f"Failed to query Ollama tags: {e}")
-        return []
+        return [], False
 
-    async def select_best_model(self) -> str:
-        available = await self.get_available_models()
+    async def get_available_models(self) -> List[str]:
+        available, _ = await self.get_model_status()
+        return available
+
+    async def select_best_model(self, available: Optional[List[str]] = None) -> str:
+        if available is None:
+            available = await self.get_available_models()
         for preferred in cfg.PREFERRED_MODELS:
             # Check exact match or prefix match (e.g. qwen2.5-coder:1.5b vs qwen2.5-coder:1.5b-instruct)
             for m in available:
@@ -47,8 +53,9 @@ class OllamaEngine:
             "options": {
                 "temperature": 0.2,
                 "num_ctx": cfg.DEFAULT_NUM_CTX,
-                "num_predict": 512
-            }
+                "num_predict": 384
+            },
+            "keep_alive": "5m"
         }
         if tools:
             payload["tools"] = tools

@@ -33,6 +33,7 @@ print(f"Factorial 6 is {factorial(6)}")
     print(f"Discovered Plugins: {loaded}")
     assert "get_system_info" in loaded
     assert "list_workspace_files" in loaded
+    assert "web_search" in loaded
 
     sys_info = await mgr.execute("get_system_info", {})
     print(f"System Info Output: {sys_info}")

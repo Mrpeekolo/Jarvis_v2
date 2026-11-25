@@ -18,7 +18,7 @@
 - **Hot-reloadable plugins** — drop a `.py` file in `plugins/`, hit Reload
 
 > [!CAUTION]
-> The current UI loads Tailwind CSS and Monaco Editor assets from CDNs. Ollama inference and JARVIS application traffic remain local, but the page will make external asset requests unless those assets are vendored locally.
+> The current UI loads Monaco Editor assets from a CDN. Optional web search sends user queries to Brave Search when configured; Ollama inference remains local.
 
 ### Hardware Target
 - **CPU:** Intel i7-4790 (4C/8T, Haswell, AVX2)
@@ -28,7 +28,7 @@
 - **Python:** 3.13 (Microsoft Store install)
 
 > [!IMPORTANT]
-> This hardware is very constrained. Keep models ≤3GB, `num_ctx` at 2048, `num_predict` at 512. No Docker (eats 2-4GB RAM). No Electron (200MB overhead). The web UI is served directly by FastAPI.
+> This hardware is very constrained. Prefer the 1.5B model; current inference is set to `num_ctx` 1024 and `num_predict` 384 to reduce memory use. No Docker (eats 2-4GB RAM). No Electron (200MB overhead). The web UI is served directly by FastAPI.
 
 ---
 
@@ -56,6 +56,8 @@ Then open `http://127.0.0.1:8765` in any browser.
    pip install fastapi uvicorn httpx pydantic mss Pillow pywin32
    ```
 
+4. Optional web search requires a Brave Search API key in `BRAVE_SEARCH_API_KEY`. Set it in the environment before launching JARVIS; the key is never stored in the repository.
+
 There is currently no `requirements.txt`, `pyproject.toml`, or virtual-environment setup script. Install dependencies explicitly or add a manifest before making a reproducible environment setup.
 
 ### Installed Ollama Models
@@ -76,6 +78,7 @@ jarvis/
 ├── HANDOFF.md               # This file
 ├── README.md                # Brief project readme
 ├── test_core.py             # Unit tests: AST sandbox, plugin discovery
+├── test_web_search.py       # Web search behavior tests; no API key or network needed
 ├── test_server.py           # Integration tests: server startup, API
 │
 ├── core/
@@ -86,6 +89,7 @@ jarvis/
 │
 ├── plugins/
 │   ├── sys_info.py          # get_system_info (GENERAL)
+│   ├── web_search.py        # web_search (GENERAL; optional Brave API key)
 │   ├── file_manager.py      # list_workspace_files (DEV)
 │   ├── dev_tools.py         # get_git_status, search_workspace_code (DEV)
 │   ├── os_tools.py          # inspect_windows, control_media, launch_application (OS_AUTO)
@@ -105,13 +109,13 @@ Tools are scoped by mode. When mode is `DEV`, the LLM sees `GENERAL` + `DEV` too
 
 | Mode     | Tools Available                                           |
 |----------|-----------------------------------------------------------|
-| GENERAL  | `get_system_info`                                         |
+| GENERAL  | `get_system_info`, `web_search`                           |
 | DEV      | `list_workspace_files`, `get_git_status`, `search_workspace_code` |
 | VISION   | `take_screenshot`                                         |
 | OS_AUTO  | `inspect_windows`, `control_media`, `launch_application`  |
 | GAMING   | *(empty — future phase)*                                  |
 
-The plugin manager includes `GENERAL` plugins in every specific mode. DEV, VISION, and OS_AUTO also work only when the corresponding mode is active; setting `GAMING` currently exposes no GAMING plugins and therefore also exposes no mode-specific tools.
+The plugin manager includes `GENERAL` plugins in every specific mode. `web_search` requires the `BRAVE_SEARCH_API_KEY` environment variable; without it, the tool returns a setup message. Search queries are sent to Brave Search. DEV, VISION, and OS_AUTO also work only when the corresponding mode is active; setting `GAMING` currently exposes no GAMING plugins and therefore also exposes no mode-specific tools.
 
 ### Plugin Contract
 Every plugin extends `BasePlugin` from `core/plugins.py`:
@@ -149,7 +153,8 @@ Drop the file in `plugins/`, click Reload in the UI (or `POST /api/plugins/reloa
 `core/llm.py` wraps the Ollama `/api/chat` endpoint with SSE streaming:
 - Auto-selects the best available model from `PREFERRED_MODELS` list
 - Passes tool schemas via Ollama's `tools` parameter
-- `temperature: 0.2`, `num_ctx: 2048`, `num_predict: 512`
+- `temperature: 0.2`, `num_ctx: 1024`, `num_predict: 384`
+- Keeps the selected model loaded for five minutes after the latest request
 - 180-second HTTP timeout for slow CPU inference
 
 ### Small-Model Tool-Call Workaround
@@ -266,6 +271,8 @@ When running commands via PowerShell programmatically, `$variable` references ge
 - Native and fallback tool calling
 - Modal plugin scoping
 - Plugin hot reload
+- Optional Brave Search integration (requires local API key)
+- Chat request history capped at ten messages and a Stop control for long-running generations
 - AST-guarded Python sandbox
 - Screenshot capture and upload
 - Windows process inspection
@@ -378,7 +385,8 @@ There is no automated test currently covering chat streaming, tool dispatch, med
 
 - FastAPI currently uses `@app.on_event("startup")`, which is retained for compatibility but may emit deprecation warnings in newer FastAPI releases.
 - The sandbox is AST-based, not a security boundary for hostile code. Execute untrusted code only after completing a review of subprocess isolation and operating-system process permissions.
-- The UI's Monaco and Tailwind CDN references require internet access on first load unless browser caches satisfy them.
+- The UI's Monaco CDN reference requires internet access on first load unless browser cache satisfies it.
+- Brave Search receives the user's search query when `web_search` is used. Returned text is untrusted reference material; source links are shown in the UI.
 - The `win32*` and `pywin32` dependencies are Windows-specific. The server can import plugins only if `win32gui`, `win32con`, and `win32api` are available.
 - Do not expose JARVIS publicly through port forwarding or disable localhost binding without separate authentication and authorization design.
 

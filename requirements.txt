@@ -1,0 +1,8 @@
+fastapi
+uvicorn
+httpx
+pydantic
+mss
+Pillow
+pywin32
+vosk

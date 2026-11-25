@@ -136,6 +136,8 @@
     .section-title { color: #bac3d0; font-size: 10px; font-weight: 800; letter-spacing: .12em; }
     .status-cluster { display: flex; align-items: center; gap: 8px; }
     .status-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--green); box-shadow: 0 0 10px rgba(101,214,166,.45); }
+    .status-dot.warning { background: var(--amber); box-shadow: 0 0 10px rgba(242,192,120,.35); }
+    .status-dot.offline { background: var(--red); box-shadow: 0 0 10px rgba(240,143,145,.35); }
     .status-text { color: var(--dim); font: 10px var(--mono); }
 
     .chat-stream {
@@ -158,6 +160,7 @@
     .welcome-label { color: var(--accent); font-size: 9px; font-weight: 800; letter-spacing: .12em; }
     .mode-chip { padding: 4px 7px; border: 1px solid #26323f; border-radius: 6px; color: var(--blue); background: #111824; font: 9px var(--mono); }
     .welcome-card p { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.65; }
+    .web-disclosure { margin-top: 9px !important; color: var(--dim) !important; font-size: 10px !important; }
     .suggestion-row { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
     .suggestion {
       border: 1px solid var(--line);
@@ -194,6 +197,12 @@
     @keyframes pulse { 0%, 60%, 100% { opacity: .25; } 30% { opacity: 1; } }
 
     .media-area img { display: block; max-height: 260px; max-width: 100%; margin-top: 10px; border: 1px solid var(--line); border-radius: 8px; object-fit: contain; }
+    .web-source-list { display: grid; gap: 7px; margin-top: 10px; }
+    .web-source { display: block; padding: 9px 10px; border: 1px solid var(--line); border-radius: 8px; color: var(--muted); background: #0b1016; text-decoration: none; }
+    .web-source:hover { border-color: #3a5265; background: #111923; }
+    .web-source-title { display: block; color: var(--accent); font-size: 11px; font-weight: 700; }
+    .web-source-url { display: block; margin-top: 3px; color: var(--dim); font: 9px var(--mono); overflow-wrap: anywhere; }
+    .web-source-description { display: block; margin-top: 5px; font-size: 10px; line-height: 1.5; }
     .tool-trace { display: none; margin-top: 9px; padding-top: 9px; border-top: 1px solid var(--line-soft); }
     .tool-trace.visible { display: block; }
     .tool-item { margin-top: 5px; padding: 7px 8px; border: 1px solid var(--line-soft); border-radius: 7px; color: var(--muted); background: #0b0f14; font: 10px var(--mono); overflow-wrap: anywhere; }
@@ -218,7 +227,18 @@
     #chat-input::placeholder { color: #596273; }
     #send-btn { height: 52px; border: 1px solid #1bc2d8; border-radius: 8px; color: #06242a; background: var(--accent); font-size: 11px; font-weight: 850; letter-spacing: .05em; }
     #send-btn:hover { background: #9af0ff; }
-    #send-btn:disabled { cursor: wait; opacity: .55; }
+    #send-btn.stop { border-color: #9c454a; color: #ffe4e4; background: #57272b; }
+    #send-btn.stop:hover { background: #71343a; }
+    #mic-btn, #spoken-toggle-btn {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      color: var(--muted);
+      background: #10151d;
+    }
+    #mic-btn { height: 52px; font-size: 15px; }
+    #mic-btn:hover, #spoken-toggle-btn:hover { border-color: #344152; color: var(--text); }
+    #mic-btn.recording { border-color: rgba(240,143,145,.55); color: #ffe5e5; background: #57272b; }
+    #mic-btn:disabled { cursor: wait; opacity: .65; }
     .composer-meta { display: flex; justify-content: space-between; margin-top: 7px; color: var(--dim); font-size: 9px; }
     #active-plugins-list { color: var(--muted); }
 
@@ -301,6 +321,7 @@
       </div>
       <div class="top-actions">
         <button id="toggle-details-btn" class="control-btn" title="Toggle tool activity">Activity hidden</button>
+        <button id="spoken-toggle-btn" class="control-btn" title="Speak completed replies with a local voice">Speak replies off</button>
         <div class="model-wrap">
           <span class="model-label">MODEL</span>
           <select id="model-select" class="model-select"><option value="">Detecting...</option></select>
@@ -314,8 +335,8 @@
         <div class="section-head">
           <span class="section-title">CONVERSATION</span>
           <div class="status-cluster">
-            <span class="status-dot"></span>
-            <span class="status-text" id="server-status">LOCAL CORE</span>
+            <span class="status-dot" id="server-status-dot"></span>
+            <span class="status-text" id="server-status">CHECKING STATUS</span>
           </div>
         </div>
 
@@ -329,14 +350,17 @@
             <div class="suggestion-row">
               <button class="suggestion" data-prompt="Check system information">System information</button>
               <button class="suggestion" data-prompt="Check the git status">Git status</button>
+              <button class="suggestion" data-prompt="Search the web for FastAPI documentation">Search the web</button>
               <button class="suggestion" data-prompt="Take a screenshot">Take screenshot</button>
               <button class="suggestion" data-prompt="Show open applications">Running apps</button>
             </div>
+            <p class="web-disclosure" id="web-search-disclosure">Checking web search setup...</p>
           </div>
         </div>
 
         <div class="composer-wrap">
           <div class="composer">
+            <button id="mic-btn" title="Push to talk">MIC</button>
             <textarea id="chat-input" rows="2" placeholder="Message JARVIS..."></textarea>
             <button id="send-btn">SEND</button>
           </div>
@@ -406,6 +430,11 @@
     let currentMode = "GENERAL";
     let showDetails = false;
     let isSending = false;
+    let chatAbortController = null;
+    let mediaRecorder = null;
+    let microphoneStream = null;
+    let recordedChunks = [];
+    let spokenReplies = false;
 
     require.config({ paths: { vs: "https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.45.0/min/vs" } });
     require(["vs/editor/editor.main"], function () {
@@ -427,11 +456,183 @@
     }
 
     function updateModeUI(mode) {
-      currentMode = mode;
+      currentMode = mode === "SYSTEM" ? "OS_AUTO" : mode;
       document.querySelectorAll(".mode-btn").forEach(btn => {
-        btn.classList.toggle("active-mode", btn.dataset.mode === mode);
+        btn.classList.toggle("active-mode", btn.dataset.mode === currentMode);
       });
-      document.getElementById("active-mode-badge").textContent = mode;
+      document.getElementById("active-mode-badge").textContent = currentMode === "OS_AUTO" ? "SYSTEM" : currentMode;
+    }
+
+    function setCoreStatus(label, state) {
+      document.getElementById("server-status").textContent = label;
+      document.getElementById("server-status-dot").className = "status-dot" + (state ? " " + state : "");
+    }
+
+    function trimChatHistory() {
+      if (chatHistory.length > 10) chatHistory = chatHistory.slice(-10);
+      const firstUserIndex = chatHistory.findIndex(message => message.role === "user");
+      if (firstUserIndex > 0) chatHistory = chatHistory.slice(firstUserIndex);
+    }
+
+    function getLocalVoices() {
+      if (!("speechSynthesis" in window)) return [];
+      return window.speechSynthesis.getVoices().filter(voice => voice.localService);
+    }
+
+    function speakReply(text) {
+      if (!spokenReplies || !text.trim()) return;
+      const voices = getLocalVoices();
+      if (!voices.length) return;
+      window.speechSynthesis.cancel();
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.voice = voices[0];
+      utterance.lang = voices[0].lang || "en-US";
+      window.speechSynthesis.speak(utterance);
+    }
+
+    function encodeWav(audioBuffer) {
+      const sampleRate = 16000;
+      const offline = new OfflineAudioContext(1, audioBuffer.duration * sampleRate, sampleRate);
+      const source = offline.createBufferSource();
+      source.buffer = audioBuffer;
+      source.connect(offline.destination);
+      source.start();
+      return offline.startRendering().then(rendered => {
+        const samples = rendered.getChannelData(0);
+        const wavBuffer = new ArrayBuffer(44 + samples.length * 2);
+        const view = new DataView(wavBuffer);
+        function writeText(offset, text) {
+          for (let i = 0; i < text.length; i++) view.setUint8(offset + i, text.charCodeAt(i));
+        }
+        writeText(0, "RIFF");
+        view.setUint32(4, 36 + samples.length * 2, true);
+        writeText(8, "WAVE");
+        writeText(12, "fmt ");
+        view.setUint32(16, 16, true);
+        view.setUint16(20, 1, true);
+        view.setUint16(22, 1, true);
+        view.setUint32(24, sampleRate, true);
+        view.setUint32(28, sampleRate * 2, true);
+        view.setUint16(32, 2, true);
+        view.setUint16(34, 16, true);
+        writeText(36, "data");
+        view.setUint32(40, samples.length * 2, true);
+        let offset = 44;
+        for (let i = 0; i < samples.length; i++, offset += 2) {
+          const clamped = Math.max(-1, Math.min(1, samples[i]));
+          view.setInt16(offset, clamped < 0 ? clamped * 0x8000 : clamped * 0x7fff, true);
+        }
+        return wavBuffer;
+      });
+    }
+
+    function bytesToBase64(bytes) {
+      let binary = "";
+      const chunkSize = 0x8000;
+      for (let i = 0; i < bytes.length; i += chunkSize) {
+        binary += String.fromCharCode(...bytes.subarray(i, Math.min(i + chunkSize, bytes.length)));
+      }
+      return btoa(binary);
+    }
+
+    async function stopMicrophone() {
+      if (mediaRecorder && mediaRecorder.state !== "inactive") {
+        mediaRecorder.stop();
+      }
+    }
+
+    async function toggleMicrophone() {
+      const button = document.getElementById("mic-btn");
+      if (mediaRecorder && mediaRecorder.state === "recording") {
+        button.textContent = "...";
+        button.disabled = true;
+        await stopMicrophone();
+        return;
+      }
+
+      try {
+        microphoneStream = await navigator.mediaDevices.getUserMedia({
+          audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true },
+          video: false
+        });
+        recordedChunks = [];
+        mediaRecorder = new MediaRecorder(microphoneStream);
+        mediaRecorder.addEventListener("dataavailable", event => {
+          if (event.data.size) recordedChunks.push(event.data);
+        });
+        mediaRecorder.addEventListener("stop", async () => {
+          microphoneStream?.getTracks().forEach(track => track.stop());
+          button.textContent = "MIC";
+          button.classList.remove("recording");
+          button.disabled = true;
+          try {
+            const blob = new Blob(recordedChunks, { type: mediaRecorder.mimeType });
+            const context = new AudioContext();
+            const decoded = await context.decodeAudioData(await blob.arrayBuffer());
+            await context.close();
+            const wav = await encodeWav(decoded);
+            if (wav.byteLength > 5 * 1024 * 1024) throw new Error("Recording is too large");
+            const base64 = bytesToBase64(new Uint8Array(wav));
+            const res = await fetch("/api/voice/transcribe", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ audio_base64: base64 })
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.detail || "Transcription failed");
+            document.getElementById("chat-input").value = data.transcript || "";
+            document.getElementById("chat-input").focus();
+          } catch (err) {
+            alert("Voice transcription failed: " + err.message);
+          } finally {
+            button.disabled = false;
+          }
+        });
+        mediaRecorder.start();
+        button.textContent = "STOP";
+        button.classList.add("recording");
+      } catch (err) {
+        alert("Microphone unavailable: " + err.message);
+        button.disabled = false;
+      }
+    }
+
+    function renderWebSources(container, results) {
+      if (!Array.isArray(results) || !results.length) return;
+      const list = document.createElement("div");
+      list.className = "web-source-list";
+      const heading = document.createElement("div");
+      heading.className = "web-disclosure";
+      heading.textContent = "WEB SOURCES · BRAVE SEARCH";
+      list.appendChild(heading);
+
+      results.forEach(result => {
+        try {
+          const url = new URL(result.url);
+          if (!["http:", "https:"].includes(url.protocol)) return;
+          const link = document.createElement("a");
+          link.className = "web-source";
+          link.href = url.href;
+          link.target = "_blank";
+          link.rel = "noopener noreferrer";
+
+          const title = document.createElement("span");
+          title.className = "web-source-title";
+          title.textContent = result.title || url.hostname;
+          const address = document.createElement("span");
+          address.className = "web-source-url";
+          address.textContent = url.href;
+          const description = document.createElement("span");
+          description.className = "web-source-description";
+          description.textContent = result.description || "";
+          link.append(title, address, description);
+          list.appendChild(link);
+        } catch (err) {
+          console.warn("Skipping invalid web search result URL", err);
+        }
+      });
+
+      if (list.children.length > 1) container.appendChild(list);
     }
 
     async function setMode(mode) {
@@ -458,21 +659,49 @@
         updateModeUI(data.active_mode);
 
         const select = document.getElementById("model-select");
+        const selectedModel = select.value;
+        const modelToSelect = (data.available_models || []).includes(selectedModel)
+          ? selectedModel
+          : data.active_model;
         select.innerHTML = "";
         (data.available_models || []).forEach(model => {
           const option = document.createElement("option");
           option.value = model;
           option.textContent = model;
-          if (model === data.active_model) option.selected = true;
+          if (model === modelToSelect) option.selected = true;
           select.appendChild(option);
         });
-        if (!select.children.length) select.innerHTML = '<option value="">No models</option>';
+        if (!select.children.length) {
+          select.innerHTML = '<option value="">No models available</option>';
+        } else if (modelToSelect && !(data.available_models || []).includes(modelToSelect)) {
+          const fallback = document.createElement("option");
+          fallback.value = modelToSelect;
+          fallback.textContent = modelToSelect + " (fallback)";
+          fallback.selected = true;
+          select.appendChild(fallback);
+        }
 
         const modeTools = (data.modes_map[data.active_mode] || []).concat(data.modes_map.GENERAL || []);
         document.getElementById("active-plugins-list").textContent = [...new Set(modeTools)].join(", ") || "None";
-        document.getElementById("server-status").textContent = "LOCAL CORE";
+        if (data.ollama_status === "online" && data.available_models.length) {
+          setCoreStatus("JARVIS + OLLAMA READY", "");
+        } else if (data.ollama_status === "online") {
+          setCoreStatus("OLLAMA HAS NO MODELS", "warning");
+        } else {
+          setCoreStatus("JARVIS ONLINE · OLLAMA OFFLINE", "warning");
+        }
+        document.getElementById("web-search-disclosure").textContent = data.web_search_configured
+          ? "Web searches send your query to Brave Search. Results are external and unverified."
+          : "Web search needs BRAVE_SEARCH_API_KEY. Search queries will be sent to Brave Search once enabled.";
+        const voiceStatus = data.voice || {};
+        const micButton = document.getElementById("mic-btn");
+        micButton.title = voiceStatus.available
+          ? "Push to talk · local Vosk transcription"
+          : !voiceStatus.dependency_available
+            ? "Vosk is not installed"
+            : "Vosk model is missing · run setup_voice_model.py";
       } catch (err) {
-        document.getElementById("server-status").textContent = "OFFLINE";
+        setCoreStatus("JARVIS OFFLINE", "offline");
         console.error("Failed to load status", err);
       }
     }
@@ -508,15 +737,21 @@
     }
 
     async function sendChat() {
-      if (isSending) return;
+      if (isSending) {
+        chatAbortController?.abort();
+        return;
+      }
       const input = document.getElementById("chat-input");
       const text = input.value.trim();
       if (!text) return;
 
       isSending = true;
+      chatAbortController = new AbortController();
       input.value = "";
       input.style.height = "52px";
-      document.getElementById("send-btn").disabled = true;
+      const sendButton = document.getElementById("send-btn");
+      sendButton.textContent = "STOP";
+      sendButton.classList.add("stop");
       const stream = document.getElementById("chat-stream");
 
       const userMessage = document.createElement("div");
@@ -534,13 +769,19 @@
           <div class="tool-trace ${showDetails ? "visible" : ""}"></div>
         </div>`;
       stream.appendChild(assistantMessage);
+      const visibleMessages = stream.querySelectorAll(".message");
+      visibleMessages.forEach((message, index) => {
+        if (index < visibleMessages.length - 40) message.remove();
+      });
       stream.scrollTop = stream.scrollHeight;
 
       const reply = assistantMessage.querySelector(".reply-text");
       const media = assistantMessage.querySelector(".media-area");
       const trace = assistantMessage.querySelector(".tool-trace");
       const status = assistantMessage.querySelector(".status-indicator");
+      status.textContent = "Waiting for local model...";
       chatHistory.push({ role: "user", content: text });
+      trimChatHistory();
 
       const askedForLogs = /\b(show|what|view|inspect)\b.*\b(log|logs|doing|did|activity|trace|steps|tools)\b/i.test(text);
       if (askedForLogs) {
@@ -566,7 +807,8 @@
             messages: chatHistory,
             model: document.getElementById("model-select").value,
             mode: currentMode
-          })
+          }),
+          signal: chatAbortController.signal
         });
         if (!res.ok) throw new Error("Chat request failed");
 
@@ -587,6 +829,7 @@
               if (event.type === "mode_info") {
                 updateModeUI(event.mode);
               } else if (event.type === "token") {
+                status.textContent = "";
                 if (!assistantReply) reply.textContent = "";
                 assistantReply += event.token;
                 reply.textContent = assistantReply;
@@ -613,6 +856,9 @@
                   media.appendChild(link);
                   loadScreenshotGallery();
                 }
+                if (event.tool === "web_search" && event.result && event.result.results) {
+                  renderWebSources(media, event.result.results);
+                }
               } else if (event.type === "error") {
                 reply.innerHTML = `<span class="error-text">Error: ${escapeHtml(event.content)}</span>`;
               } else if (event.type === "done") {
@@ -620,15 +866,27 @@
               }
             } catch (err) {}
           }
+          if (done) break;
         }
-        if (assistantReply) chatHistory.push({ role: "assistant", content: assistantReply });
+        if (assistantReply) {
+          chatHistory.push({ role: "assistant", content: assistantReply });
+          trimChatHistory();
+        }
       } catch (err) {
-        reply.innerHTML = `<span class="error-text">Stream interrupted: ${escapeHtml(err.message)}</span>`;
+        if (err.name === "AbortError") {
+          reply.textContent = assistantReply || "Stopped.";
+          status.textContent = "";
+        } else {
+          reply.innerHTML = `<span class="error-text">Stream interrupted: ${escapeHtml(err.message)}</span>`;
+        }
       } finally {
         if (!assistantReply && reply.querySelector(".typing")) reply.textContent = "No response received.";
         isSending = false;
-        document.getElementById("send-btn").disabled = false;
+        chatAbortController = null;
+        sendButton.textContent = "SEND";
+        sendButton.classList.remove("stop");
         input.focus();
+        speakReply(assistantReply);
       }
     }
 
@@ -723,6 +981,16 @@
     });
 
     document.getElementById("send-btn").addEventListener("click", sendChat);
+    document.getElementById("mic-btn").addEventListener("click", toggleMicrophone);
+    document.getElementById("spoken-toggle-btn").addEventListener("click", event => {
+      if (!getLocalVoices().length) {
+        alert("No local speech-synthesis voice is available.");
+        return;
+      }
+      spokenReplies = !spokenReplies;
+      event.currentTarget.textContent = spokenReplies ? "Speak replies on" : "Speak replies off";
+      event.currentTarget.classList.toggle("active", spokenReplies);
+    });
     document.getElementById("chat-input").addEventListener("keydown", event => {
       if (event.key === "Enter" && !event.shiftKey) {
         event.preventDefault();
@@ -762,6 +1030,7 @@
 
     switchTab("sandbox");
     initStatus();
+    window.setInterval(initStatus, 30000);
   </script>
 </body>
 </html>
