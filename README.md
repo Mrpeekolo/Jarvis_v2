@@ -1,6 +1,6 @@
 # JARVIS // Discrete Local AI Assistant
 
-A discrete, privacy-first, local-only assistant engine engineered specifically for resource-conscious hardware (Intel Core i7-4790 AVX2 / 8 GB RAM / CPU-only inference).
+A discrete, privacy-first, local assistant engine engineered specifically for resource-conscious hardware (Intel Core i7-4790 AVX2 / 8 GB RAM / CPU-only inference).
 
 ---
 
@@ -9,7 +9,7 @@ A discrete, privacy-first, local-only assistant engine engineered specifically f
 ### 1. Launch JARVIS
 Double-click `start_jarvis.bat` or run in your terminal:
 ```bash
-cd "c:\Users\Lil spooky\test\jarvis"
+cd "C:\Users\Lil spooky\test\jarvis\jarvis v1\Jarvis v1"
 python main.py
 ```
 This automatically boots the FastAPI daemon on `127.0.0.1:8765` and opens your browser directly to the dashboard.
@@ -18,9 +18,10 @@ This automatically boots the FastAPI daemon on `127.0.0.1:8765` and opens your b
 
 ## Key Features
 
-1. **Pure Local & Zero Telemetry:**
+1. **Local-First & No Application Telemetry:**
    - Bound strictly to `127.0.0.1`.
-   - Never sends telemetry, network requests, or API keys outside your machine.
+   - Ollama and JARVIS application traffic stay local.
+   - The browser UI currently loads Tailwind CSS and Monaco Editor from CDNs, so first-load asset requests are external unless the assets are cached or vendored locally.
 2. **AST-Guarded Code Surface:**
    - Embedded **Monaco Editor** with live syntax highlighting.
    - Any code executed via the UI runs in an isolated Python subprocess inspected by an **Abstract Syntax Tree (AST) safety scanner**.
@@ -32,6 +33,18 @@ This automatically boots the FastAPI daemon on `127.0.0.1:8765` and opens your b
 4. **Autonomous Streaming & Tool Calling:**
    - Real-time Server-Sent Events (SSE) token streaming.
    - Native tool execution loop: the assistant can call local tools (e.g., inspect hardware, list files), receive the output, and synthesize the final answer.
+   - Small local models may emit fenced JSON tool calls; the server includes a fallback parser and deduplicates repeated calls.
+
+---
+
+## Prerequisites
+
+- Windows 10 or 11
+- Python 3.13+
+- Ollama running on `127.0.0.1:11434`
+- Required Python packages: `fastapi`, `uvicorn`, `httpx`, `pydantic`, `mss`, `Pillow`, and `pywin32`
+
+The project currently has no dependency manifest. Install the packages explicitly or add `requirements.txt`/`pyproject.toml` before preparing a reproducible environment.
 
 ---
 

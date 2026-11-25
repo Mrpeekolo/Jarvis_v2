@@ -1,19 +1,24 @@
 # JARVIS — AI Model Handoff Document
 
-> **Purpose:** This file contains everything another AI model (GPT-4, Claude, Gemini, etc.) needs to understand, run, and continue developing this project. Read it top-to-bottom before making any changes.
+> **Purpose:** This file contains everything another AI model needs to understand, run, and continue developing this project. Read it top-to-bottom before making changes.
+>
+> **Repository state:** Last verified against the current checkout on 2026-11-25.
 
 ---
 
 ## 1. Project Overview
 
-**JARVIS** is a fully local, zero-telemetry AI assistant built on Python + Ollama. It runs entirely on `127.0.0.1` with no external network calls. The UI is a browser-based SPA served by FastAPI at `http://127.0.0.1:8765`.
+**JARVIS** is a privacy-first local AI assistant built on Python, FastAPI, and Ollama. Its server and Ollama API bind to localhost. The UI is a browser-based SPA served by FastAPI at `http://127.0.0.1:8765`.
 
 ### Core Principles
-- **Privacy absolute** — all traffic bound to localhost, zero telemetry
+- **Privacy-first** — server traffic bound to localhost and no application telemetry
 - **Local-first** — Ollama for inference, no cloud APIs
 - **Discrete by default** — tool calls and internal JSON hidden from chat; shown only on explicit request
 - **Modal architecture** — tools scoped to modes (GENERAL, DEV, VISION, OS_AUTO, GAMING)
 - **Hot-reloadable plugins** — drop a `.py` file in `plugins/`, hit Reload
+
+> [!CAUTION]
+> The current UI loads Tailwind CSS and Monaco Editor assets from CDNs. Ollama inference and JARVIS application traffic remain local, but the page will make external asset requests unless those assets are vendored locally.
 
 ### Hardware Target
 - **CPU:** Intel i7-4790 (4C/8T, Haswell, AVX2)
@@ -31,15 +36,17 @@
 
 ### Quick Start
 ```batch
-cd jarvis
+cd /d "C:\Users\Lil spooky\test\jarvis\jarvis v1\Jarvis v1"
 start_jarvis.bat
 ```
 Or manually:
 ```bash
-cd jarvis
+cd "C:\Users\Lil spooky\test\jarvis\jarvis v1\Jarvis v1"
 python main.py
 ```
 Then open `http://127.0.0.1:8765` in any browser.
+
+`start_jarvis.bat` changes to the directory containing the batch file, so it works regardless of the caller's current directory.
 
 ### Prerequisites
 1. **Python 3.13+** with pip
@@ -49,10 +56,14 @@ Then open `http://127.0.0.1:8765` in any browser.
    pip install fastapi uvicorn httpx pydantic mss Pillow pywin32
    ```
 
+There is currently no `requirements.txt`, `pyproject.toml`, or virtual-environment setup script. Install dependencies explicitly or add a manifest before making a reproducible environment setup.
+
 ### Installed Ollama Models
 - `qwen2.5-coder:1.5b` (986 MB) — primary default, best speed/quality ratio
 - `qwen35-fast:latest` (3.3 GB) — user's custom model
 - `qwen3.5:4b` (3.3 GB)
+
+Model availability is machine-specific. The server queries Ollama through `GET /api/tags` and falls back to the first available model or `qwen35-fast:latest` if Ollama is unreachable.
 
 ---
 
@@ -100,6 +111,8 @@ Tools are scoped by mode. When mode is `DEV`, the LLM sees `GENERAL` + `DEV` too
 | OS_AUTO  | `inspect_windows`, `control_media`, `launch_application`  |
 | GAMING   | *(empty — future phase)*                                  |
 
+The plugin manager includes `GENERAL` plugins in every specific mode. DEV, VISION, and OS_AUTO also work only when the corresponding mode is active; setting `GAMING` currently exposes no GAMING plugins and therefore also exposes no mode-specific tools.
+
 ### Plugin Contract
 Every plugin extends `BasePlugin` from `core/plugins.py`:
 
@@ -139,7 +152,7 @@ Drop the file in `plugins/`, click Reload in the UI (or `POST /api/plugins/reloa
 - `temperature: 0.2`, `num_ctx: 2048`, `num_predict: 512`
 - 180-second HTTP timeout for slow CPU inference
 
-### Small Model Tool-Call Workaround
+### Small-Model Tool-Call Workaround
 `qwen2.5-coder:1.5b` does **NOT** reliably use Ollama's native `tools` wire format. Instead it outputs:
 ````
 ```json
@@ -150,6 +163,8 @@ The server has a regex fallback parser (`_extract_json_tool_calls()` in `main.py
 - **Dedup set** (`executed_signatures`): prevents the model from re-triggering the same tool call in a loop
 - **Tools only on first pass**: second LLM iteration gets no tools, forcing a natural summary
 - **JSON buffering**: leading `{` or ` ``` ` tokens are buffered and suppressed from the chat stream so users don't see raw tool JSON
+
+Native Ollama `tool_calls` and fenced/raw JSON fallback calls share the same dispatch loop.
 
 ### Discrete Operation
 - `httpx` and `uvicorn.access` loggers are suppressed to WARNING
@@ -177,6 +192,8 @@ All endpoints are on `http://127.0.0.1:8765`.
 | POST   | `/api/screenshot`       | Capture screen via vision plugin                  |
 | POST   | `/api/screenshot/upload`| Upload base64 screenshot `{"image_base64": "..."}` |
 | GET    | `/static/*`             | Static file serving (index.html, screenshots)     |
+
+The server currently allows CORS for all origins, but the application is intended to run behind FastAPI on `127.0.0.1`. `/api/status` is the best endpoint for checking which Ollama model and plugins are currently active.
 
 ### Chat SSE Event Types
 The `POST /api/chat` endpoint returns `text/event-stream` with these event types:
@@ -217,8 +234,15 @@ Single-page app using Tailwind CSS (CDN) and Monaco Editor (CDN).
 ### Screenshot Capture in Headless Sessions
 Both `mss` and `PIL.ImageGrab` fail with "BitBlt: Access is denied" when JARVIS runs in a headless or sandboxed session (like from an IDE terminal or remote agent). **Fix:** Launch JARVIS from an interactive desktop session via `start_jarvis.bat`. The plugin has a graceful fallback chain and returns an informative error.
 
+The screenshot plugin writes timestamped PNG files and `latest.png` under `static/screenshots/`. `/api/screenshots` returns the ten most recent `screen_*.png` files.
+
 ### win32gui.EnumWindows
-`win32gui.EnumWindows()` throws error 1400 ("Invalid window handle") in certain session contexts. **Fix:** The `inspect_windows` plugin uses `tasklist /FI "STATUS eq RUNNING" /FO CSV` subprocess instead, which works universally.
+Window enumeration must be resilient to session-context failures. The `inspect_windows` plugin obtains process output with `tasklist /FI "STATUS eq RUNNING" /FO CSV` and also attempts foreground-window lookup through `win32gui`.
+
+### Workspace and Git Roots
+The DEV plugins currently use a hard-coded workspace root: `C:\Users\Lil spooky\test`. This is the parent directory in the current environment and therefore includes the repository at `test\jarvis\jarvis v1\Jarvis v1`.
+
+If the project is moved or cloned elsewhere, update `WORKSPACE_ROOT` in `plugins/dev_tools.py` and `plugins/file_manager.py`. A future implementation should derive this path from `BASE_DIR` or explicit configuration instead of keeping machine-specific absolute paths.
 
 ### Small Model Tool Calling
 `qwen2.5-coder:1.5b` outputs tool calls as markdown JSON blocks instead of using Ollama's native tool format. The server's regex parser handles this, but be aware:
@@ -234,29 +258,30 @@ When running commands via PowerShell programmatically, `$variable` references ge
 
 ---
 
-## 8. Future Roadmap
+## 8. Implementation Status and Future Roadmap
 
-These phases were discussed and agreed upon but are **not yet implemented**:
+### Implemented
+- FastAPI server and browser UI
+- Ollama model discovery and streaming chat
+- Native and fallback tool calling
+- Modal plugin scoping
+- Plugin hot reload
+- AST-guarded Python sandbox
+- Screenshot capture and upload
+- Windows process inspection
+- Media control and a small application whitelist
 
-### Phase 2: Offline Voice Engine
-- **Wakeword + STT:** Vosk (offline speech recognition)
-- **TTS:** pyttsx3 (offline text-to-speech)
-- **Input mode:** Hybrid push-to-talk + wakeword activation
-- Packages `vosk` and `pyttsx3` are already pip-installed
+### Not Implemented
+- **Offline voice engine:** No Vosk or pyttsx3 integration is exposed in the UI or server.
+- **Persistent memory:** No SQLite, FTS5, session summaries, or recall system is implemented.
+- **Gaming plugins:** The GAMING mode exists, but no GAMING-scoped plugin is registered.
+- **Emergency kill-switch:** No global hotkey or stop mechanism is implemented.
 
-### Phase 3: Persistent Memory
-- **Database:** SQLite + FTS5 for full-text search
-- **Features:** Rolling session summaries, conversation recall, fact extraction
-- Keep it file-based, no external DB servers
-
-### Phase 4: Gaming Mode Plugins
-- **Input simulation:** PyDirectInput for keyboard/mouse, vgamepad for controller
-- **Use cases:** Game automation, macro recording, overlay integration
-- Must respect the two-tier safety model (auto-read, guarded-mutate)
-
-### Phase 5: Emergency Kill-Switch
-- Global hotkey (e.g., Ctrl+Shift+Escape) to immediately halt all mutating actions
-- Two-tier safety: read operations auto-execute, write/mutate operations require confirmation
+### Future Work
+- **Voice:** Add offline STT/TTS after stabilizing the core chat loop.
+- **Memory:** Use a local SQLite/FTS5 store with explicit recall controls.
+- **Gaming:** Add only after the two-tier read-versus-mutate safety model is implemented.
+- **Kill-switch:** Add a global hotkey and central action cancellation, especially before enabling mutating plugins.
 
 ---
 
@@ -289,17 +314,21 @@ pyttsx3
 ## 10. Testing
 
 ```bash
-# Unit tests (AST sandbox, plugin discovery)
-cd jarvis
-python -m pytest test_core.py -v
+# Run from the repository root
+python test_core.py
 
-# Server integration tests
-python -m pytest test_server.py -v
+# Optional pytest discovery
+python -m pytest test_core.py test_server.py -v
 ```
 
 ### What the tests cover:
 - `test_core.py`: AST blocks `import os`, safe code executes correctly, plugin discovery loads all plugins
-- `test_server.py`: Server startup, `/api/status` returns correct data, UI serves successfully
+- `test_server.py`: Attempts a server startup, `/api/status` response, and UI serving
+
+> [!IMPORTANT]
+> `test_server.py` contains a machine-specific server working directory (`C:/Users/Lil spooky/test/jarvis`) that is inconsistent with this repository location. Update it to use the repository directory (for example, `Path(__file__).resolve().parent`) before relying on pytest or this script as an integration test.
+
+There is no automated test currently covering chat streaming, tool dispatch, media controls, screenshot capture, or the frontend JavaScript.
 
 ---
 
@@ -328,6 +357,29 @@ python -m pytest test_server.py -v
 - Add it to `PREFERRED_MODELS` in `core/config.py`
 - Or select it from the dropdown in the UI
 
+### Before changing the code
+1. Check Ollama with `ollama list`.
+2. Run `python test_core.py`.
+3. Start JARVIS with `python main.py` or `start_jarvis.bat`.
+4. Verify `http://127.0.0.1:8765/api/status`.
+5. Test the affected mode and plugin through the UI.
+
+### Priorities for the next contributor
+1. Replace hard-coded workspace paths with repository/config-derived paths.
+2. Add a dependency manifest and test setup.
+3. Vendor frontend dependencies to fully eliminate external network requests.
+4. Fix `test_server.py` so it uses the current repository and always cleans up the server process.
+5. Add streamed-chat/tool-dispatch tests and plugin-specific tests.
+6. Review sandbox boundaries before using the editor for untrusted code.
+
 ---
 
-*Generated for AI model handoff. Last updated: 2026-11-24.*
+## 12. Maintenance Notes
+
+- FastAPI currently uses `@app.on_event("startup")`, which is retained for compatibility but may emit deprecation warnings in newer FastAPI releases.
+- The sandbox is AST-based, not a security boundary for hostile code. Execute untrusted code only after completing a review of subprocess isolation and operating-system process permissions.
+- The UI's Monaco and Tailwind CDN references require internet access on first load unless browser caches satisfy them.
+- The `win32*` and `pywin32` dependencies are Windows-specific. The server can import plugins only if `win32gui`, `win32con`, and `win32api` are available.
+- Do not expose JARVIS publicly through port forwarding or disable localhost binding without separate authentication and authorization design.
+
+*Generated for AI model handoff. Last updated: 2026-11-25.*
